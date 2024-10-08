@@ -11,7 +11,7 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
-
+from model import get_model
 
 class ClientDataset(Dataset):
     """
