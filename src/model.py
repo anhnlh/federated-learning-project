@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Neural Network model for FEMNIST dataset classification
 class FemnistModel(nn.Module):
     def __init__(self):
         #Calls the parent constructor 
@@ -26,21 +27,31 @@ class FemnistModel(nn.Module):
         self.fc2 = nn.Linear(in_features=128, out_features=62)
 
     def forward(self, x):
+
+        # Apply first convolutional layer, then ReLU activation, then max pooling
         x = F.relu(self.conv1(x))
         x = F.max_pool2d(x, 2)
+
+        # Apply second convolutional layer, then ReLU activation, then max pooling
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2)
+
+        # Apply first fully connected layer, then ReLU activation
         x = x.view(-1, 64 * 7 * 7)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        return x
 
+        return x
+    
+    # Saves the model's state dictionary to a specfic path
     def save(self, path):
         torch.save(self.state_dict(), path)
 
+    # Loads the model's state dictionary to a specfic path
     def load(self, path):
         self.load_state_dict(torch.load(path))
 
+    # Moves and creates an instance of the model
 def get_model(device):
     model = FemnistModel()
     return model.to(device)
