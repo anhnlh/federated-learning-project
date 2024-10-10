@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
 from model import get_model
 
+
 class ClientDataset(Dataset):
     """
     Custom Pytorch Dataset class for each client.
@@ -21,6 +22,7 @@ class ClientDataset(Dataset):
         image_paths (list): List of image paths.
         labels (list): List of labels corresponding to the image paths.
     """
+
     def __init__(self, image_paths, labels, device):
         self.image_paths = image_paths
         self.labels = labels
@@ -86,7 +88,8 @@ def visualize_data(client_id, train_loader):
         break
     plt.show()
 
-def set_device():
+
+def get_device():
     """
     Set the device to the first available GPU, otherwise use CPU.
     :return: device.
@@ -99,11 +102,30 @@ def set_device():
     return torch.device("cpu")
 
 
+def load_data(client_id, data_dir, batch_size, device):
+    """
+    Load the data from the data directory.
+    :param data_dir: path to the data directory.
+    :return: train and test data loaders.
+    """
+    train_image_paths, train_labels, test_image_paths, test_labels = split_dataset(
+        os.path.join(data_dir, f"client_{client_id}")
+    )
+    train_dataset = ClientDataset(train_image_paths, train_labels, device)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataset = ClientDataset(test_image_paths, test_labels, device)
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, test_loader
+
+
 def main():
     """
     Main function to run the Federated Learning simulation.
     """
-    device = set_device()
+    device = get_device()
     data_dir = './femnist_subset'
     num_clients = len(os.listdir(data_dir))
 
@@ -116,7 +138,8 @@ def main():
         test_dataset = ClientDataset(test_image_paths, test_labels, device)
         test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-        visualize_data(client_id, train_loader)  # comment out if no visualization
+        # comment out if no visualization
+        visualize_data(client_id, train_loader)
         # TODO: initialize ClientApp
 
 

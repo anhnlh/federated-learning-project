@@ -1,29 +1,188 @@
+"""
+Client implementation using the Flower Framework.
+
+Author: Anh Nguyen, aln4739@rit.edu
+"""
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import flwr as fl
-from model import FemnistModel
+from flwr.client import ClientApp, NumPyClient
+from flwr.common import Context
 
-class FemnistClient(fl.client.NumPyClient):
-    def __init__(self, model, train_loader, test_loader, device):
+from typing import OrderedDict
+
+import model
+import main
+
+
+class FemnistClient(NumPyClient):
+    """
+    Client implementation for the FEMNIST dataset.
+    """
+
+    def __init__(self, model, train_loader, test_loader, local_epochs, device):
+        """
+        Initializes the client with the given model, data loaders, number of local epochs, and device.
+
+        Args:
+            model (torch.nn.Module): The neural network model to be trained.
+            train_loader (torch.utils.data.DataLoader): DataLoader for the training dataset.
+            test_loader (torch.utils.data.DataLoader): DataLoader for the testing dataset.
+            local_epochs (int): Number of local epochs to train the model.
+            device (torch.device): The device (CPU or GPU) on which the model will be trained.
+        """
         self.model = model
         self.train_loader = train_loader
         self.test_loader = test_loader
+        self.local_epochs = local_epochs
         self.device = device
 
-    #def get_parameters():
-        
+    def fit(self, parameters):
+        """
+        Trains the model using the provided parameters and returns the updated model weights,
+        the size of the training dataset, and the training results.
 
-    #def set_parameters():
-      
+        Args:
+            parameters (list): A list of parameters to set the model weights.
 
-    #def fit():
-       
+        Returns:
+            tuple: A tuple containing:
+            - list: The updated model weights.
+            - int: The size of the training dataset.
+            - dict: The results of the training process.
+        """
+        set_weights(self.model, parameters)
+        results = train(self.model, self.train_loader,
+                        self.local_epochs, self.device)
+        return get_weights(self.model), len(self.train_loader.dataset), results
 
-    #def evaluate():
-       
+    def evaluate(self, parameters):
+        """
+        Evaluate the model on the client's local dataset.
+        """
+        set_weights(self.model, parameters)
+        loss, accuracy = test(self.model, self.test_loader, self.device)
+        return loss, len(self.test_loader.dataset), {'accuracy': accuracy}
 
-#def train():
-   
-#def test():
-    
+
+def train(model, train_loader, epochs, device):
+    """
+    Trains the given model using the provided training data loader for a specified number of epochs.
+    Args:
+        model (torch.nn.Module): The neural network model to be trained.
+        train_loader (torch.utils.data.DataLoader): DataLoader providing the training data.
+        epochs (int): Number of epochs to train the model.
+        device (torch.device): The device (CPU or GPU) on which to perform training.
+    Returns:
+        float: The average loss over the training data.
+    """
+    criterion = nn.CrossEntropyLoss().to(device)
+    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    model.train()
+    running_loss = 0.0
+    for _ in range(epochs):
+        for batch in train_loader:
+            images = batch['img']
+            labels = batch['label']
+            optimizer.zero_grad()
+            # images and labels already on device
+            loss = criterion(model(images), labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+    avg_loss = running_loss / len(train_loader)
+    return avg_loss
+
+
+def test(model, test_loader, device):
+    """
+    Evaluate the model on the test dataset.
+    Args:
+        model (torch.nn.Module): The neural network model to be evaluated.
+        test_loader (torch.utils.data.DataLoader): DataLoader for the test dataset.
+        device (torch.device): The device (CPU or GPU) on which the model is deployed.
+    Returns:
+        tuple: A tuple containing:
+            - loss (float): The cumulative loss over the test dataset.
+            - accuracy (float): The accuracy of the model on the test dataset.
+    """
+    criterion = nn.CrossEntropyLoss().to(device)
+    correcet, loss = 0, 0.0
+    with torch.no_grad():
+        for batch in test_loader:
+            images = batch['img']
+            labels = batch['label']
+            outputs = model(images)
+            loss += criterion(outputs, labels).item()
+            _, predicted = torch.max(outputs, 1)
+            correct += (predicted == labels).sum().item()
+
+    accuracy = correct / len(test_loader)
+    return loss, accuracy
+
+
+def get_weights(model):
+    """
+    Extracts the weights from a given PyTorch model and converts them to NumPy arrays.
+
+    Args:
+        model (torch.nn.Module): The PyTorch model from which to extract weights.
+
+    Returns:
+        list: A list of NumPy arrays representing the weights of the model.
+    """
+    return [val.cpu().numpy() for _, val in model.state_dict().items()]
+
+
+def set_weights(model, parameters):
+    """
+    Set the weights of a given model using the provided parameters.
+
+    Args:
+        model (torch.nn.Module): The model whose weights are to be set.
+        parameters (list): A list of parameters to set in the model. Each parameter should correspond to a layer in the model.
+
+    Returns:
+        None
+    """
+    params_dict = zip(model.state_dict().keys(), parameters)
+    state_dict = OrderedDict({k: torch.Tensor(v) for k, v in params_dict})
+    model.load_state_dict(state_dict)
+
+
+def client_fn(context: Context):
+    """
+    Initializes and returns a FemnistClient instance configured for federated learning.
+    Args:
+        context (Context): The context object containing node and run configurations.
+    Returns:
+        FemnistClient: An instance of FemnistClient configured with the specified model,
+                       data loaders, local epochs, and device.
+    """
+    device = main.get_device()
+    # read node_config
+    client_id = context.node_config['partition-id']
+
+    # read run_config
+    data_dir = context.run_config['data_dir']
+    batch_size = context.run_config['batch_size']
+    train_loader, test_loader = main.load_data(
+        client_id,
+        data_dir,
+        batch_size,
+        device
+    )
+    local_epochs = context.run_config['local_epochs']
+
+    return FemnistClient(
+        model=model.get_model(device),
+        train_loader=train_loader,
+        test_loader=test_loader,
+        local_epochs=local_epochs,
+        device=device
+    ).to_client()
+
+
+app = ClientApp(client_fn)
