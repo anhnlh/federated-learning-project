@@ -10,10 +10,9 @@ import torch.optim as optim
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
 
-from typing import OrderedDict
 
-import model
-import main
+from src.model import get_model
+from src.main import get_device, load_data, get_weights, set_weights
 
 
 class FemnistClient(NumPyClient):
@@ -38,14 +37,14 @@ class FemnistClient(NumPyClient):
         self.local_epochs = local_epochs
         self.device = device
 
-    def fit(self, parameters):
+    def fit(self, parameters, _):
         """
         Trains the model using the provided parameters and returns the updated model weights,
         the size of the training dataset, and the training results.
 
         Args:
             parameters (list): A list of parameters to set the model weights.
-
+            _ (Any): Placeholder for additional arguments (not used).
         Returns:
             tuple: A tuple containing:
             - list: The updated model weights.
@@ -54,19 +53,28 @@ class FemnistClient(NumPyClient):
         """
         set_weights(self.model, parameters)
         results = train(self.model, self.train_loader,
-                        self.local_epochs, self.device)
+                        self.test_loader, self.local_epochs, self.device)
         return get_weights(self.model), len(self.train_loader.dataset), results
 
-    def evaluate(self, parameters):
+    def evaluate(self, parameters, _):
         """
-        Evaluate the model on the client's local dataset.
+        Evaluate the model on the test dataset.
+
+        Args:
+            parameters (list): The model parameters to be set before evaluation.
+            _ (Any): Placeholder for additional arguments (not used).
+        Returns:
+            tuple: A tuple containing:
+            - loss (float): The loss value after evaluation.
+            - dataset_size (int): The size of the test dataset.
+            - metrics (dict): A dictionary containing evaluation metrics, such as accuracy.
         """
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.test_loader, self.device)
         return loss, len(self.test_loader.dataset), {'accuracy': accuracy}
 
 
-def train(model, train_loader, epochs, device):
+def train(model, train_loader, test_loader, epochs, device):
     """
     Trains the given model using the provided training data loader for a specified number of epochs.
     Args:
@@ -80,20 +88,21 @@ def train(model, train_loader, epochs, device):
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     model.train()
-    running_loss = 0.0
     for _ in range(epochs):
         for batch in train_loader:
             images = batch['img']
             labels = batch['label']
             optimizer.zero_grad()
             # images and labels already on device
-            loss = criterion(model(images), labels)
-            loss.backward()
+            criterion(model(images), labels).backward()
             optimizer.step()
-            running_loss += loss.item()
 
-    avg_loss = running_loss / len(train_loader)
-    return avg_loss
+    val_loss, val_accuracy = test(model, test_loader, device)
+
+    return {
+        "val_loss": val_loss,
+        "val_accuracy": val_accuracy
+    }
 
 
 def test(model, test_loader, device):
@@ -109,7 +118,7 @@ def test(model, test_loader, device):
             - accuracy (float): The accuracy of the model on the test dataset.
     """
     criterion = nn.CrossEntropyLoss().to(device)
-    correcet, loss = 0, 0.0
+    correct, loss = 0, 0.0
     with torch.no_grad():
         for batch in test_loader:
             images = batch['img']
@@ -119,37 +128,9 @@ def test(model, test_loader, device):
             _, predicted = torch.max(outputs, 1)
             correct += (predicted == labels).sum().item()
 
-    accuracy = correct / len(test_loader)
+    accuracy = correct / len(test_loader.dataset)
+    loss /= len(test_loader)
     return loss, accuracy
-
-
-def get_weights(model):
-    """
-    Extracts the weights from a given PyTorch model and converts them to NumPy arrays.
-
-    Args:
-        model (torch.nn.Module): The PyTorch model from which to extract weights.
-
-    Returns:
-        list: A list of NumPy arrays representing the weights of the model.
-    """
-    return [val.cpu().numpy() for _, val in model.state_dict().items()]
-
-
-def set_weights(model, parameters):
-    """
-    Set the weights of a given model using the provided parameters.
-
-    Args:
-        model (torch.nn.Module): The model whose weights are to be set.
-        parameters (list): A list of parameters to set in the model. Each parameter should correspond to a layer in the model.
-
-    Returns:
-        None
-    """
-    params_dict = zip(model.state_dict().keys(), parameters)
-    state_dict = OrderedDict({k: torch.Tensor(v) for k, v in params_dict})
-    model.load_state_dict(state_dict)
 
 
 def client_fn(context: Context):
@@ -161,23 +142,23 @@ def client_fn(context: Context):
         FemnistClient: An instance of FemnistClient configured with the specified model,
                        data loaders, local epochs, and device.
     """
-    device = main.get_device()
+    device = get_device()
     # read node_config
     client_id = context.node_config['partition-id']
 
     # read run_config
-    data_dir = context.run_config['data_dir']
-    batch_size = context.run_config['batch_size']
-    train_loader, test_loader = main.load_data(
+    data_dir = context.run_config['data-dir']
+    batch_size = context.run_config['batch-size']
+    train_loader, test_loader = load_data(
         client_id,
         data_dir,
         batch_size,
         device
     )
-    local_epochs = context.run_config['local_epochs']
+    local_epochs = context.run_config['local-epochs']
 
     return FemnistClient(
-        model=model.get_model(device),
+        model=get_model(device),
         train_loader=train_loader,
         test_loader=test_loader,
         local_epochs=local_epochs,
