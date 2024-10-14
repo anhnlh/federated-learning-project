@@ -1,7 +1,7 @@
 """
 Client implementation using the Flower Framework.
 
-Author: Anh Nguyen, aln4739@rit.edu
+Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 """
 import torch
 import torch.nn as nn

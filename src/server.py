@@ -1,7 +1,7 @@
 """
 This module sets up and runs a federated learning server using the Flower framework.
 
-Author: Anh Nguyen, aln4739@rit.edu
+Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 """
 
 from flwr.common import Context, Metrics, ndarrays_to_parameters
