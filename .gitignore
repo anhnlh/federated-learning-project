@@ -1,2 +1,3 @@
 femnist_subset/
 .idea/
+__pycache__/
