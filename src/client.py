@@ -14,10 +14,12 @@ import os
 from src.model import get_model
 from src.main import get_device, load_data, get_weights, set_weights
 
+
 class FemnistClient(NumPyClient):
     """
     Client implementation for the FEMNIST dataset.
     """
+
     def __init__(self, model, train_loader, test_loader, local_epochs, device, client_id, is_poisoned):
         """
         Initializes the client with the given model, data loaders, number of local epochs, and device.
@@ -52,7 +54,8 @@ class FemnistClient(NumPyClient):
             - dict: The results of the training process.
         """
         set_weights(self.model, parameters)
-        train_loss, train_accuracy = train(self.model, self.train_loader, self.local_epochs, self.device, self.is_poisoned)
+        train_loss, train_accuracy = train(
+            self.model, self.train_loader, self.local_epochs, self.device, self.is_poisoned)
         return get_weights(self.model), len(self.train_loader.dataset), {"loss": train_loss, "accuracy": train_accuracy}
 
     def evaluate(self, parameters, _):
@@ -71,6 +74,7 @@ class FemnistClient(NumPyClient):
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.test_loader, self.device)
         return loss, len(self.test_loader.dataset), {"accuracy": accuracy}
+
 
 def train(model, train_loader, epochs, device, is_poisoned):
     """
@@ -94,9 +98,9 @@ def train(model, train_loader, epochs, device, is_poisoned):
             images = batch['img']
             labels = batch['label']
             if is_poisoned:
-                # Implement your poisoning logic here
-                labels = torch.randint(0, 10, labels.shape).to(device)
-            
+                poisoned_labels = torch.randint(0, 10, labels.shape).to(device)
+                # if poisoned label is the same, add 1
+                labels = poisoned_labels + (poisoned_labels == labels).float()
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -111,6 +115,7 @@ def train(model, train_loader, epochs, device, is_poisoned):
     avg_loss = total_loss / total_samples
     accuracy = total_correct / total_samples
     return avg_loss, accuracy
+
 
 def test(model, test_loader, device):
     """
@@ -145,6 +150,7 @@ def test(model, test_loader, device):
     accuracy = total_correct / total_samples
     return avg_loss, accuracy
 
+
 def client_fn(context: Context):
     """
     Initializes and returns a FemnistClient instance configured for federated learning.
@@ -161,9 +167,11 @@ def client_fn(context: Context):
     # read run_config
     data_dir = context.run_config['data-dir']
     batch_size = context.run_config['batch-size']
-    train_loader, test_loader = load_data(client_id, data_dir, batch_size, device)
+    train_loader, test_loader = load_data(
+        client_id, data_dir, batch_size, device)
     local_epochs = context.run_config['local-epochs']
-    is_poisoned = context.run_config.get('poison', False) and int(client_id) % 5 == 0
+    unlucky = [1, 2, 5]
+    is_poisoned = context.run_config['poison'] == 'true' and client_id in unlucky
 
     return FemnistClient(
         model=get_model(device),
@@ -175,5 +183,5 @@ def client_fn(context: Context):
         is_poisoned=is_poisoned
     ).to_client()
 
-app = ClientApp(client_fn)
 
+app = ClientApp(client_fn)

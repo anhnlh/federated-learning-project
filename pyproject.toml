@@ -25,8 +25,8 @@ clientapp = "src.client:app"
 
 [tool.flwr.app.config]
 num-server-rounds = 5
-fraction-fit = 0.7
-fraction-evaluate = 0.8
+fraction-fit = 1.0
+fraction-evaluate = 1.0
 local-epochs = 10
 data-dir = "./femnist_subset/"
 batch-size = 64
@@ -36,4 +36,4 @@ poison="false"
 default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 12
+options.num-supernodes = 10
