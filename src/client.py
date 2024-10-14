@@ -20,7 +20,7 @@ class FemnistClient(NumPyClient):
     Client implementation for the FEMNIST dataset.
     """
 
-    def __init__(self, model, train_loader, test_loader, local_epochs, device):
+    def __init__(self, model, train_loader, test_loader, local_epochs, device,client_id):
         """
         Initializes the client with the given model, data loaders, number of local epochs, and device.
 
@@ -36,6 +36,8 @@ class FemnistClient(NumPyClient):
         self.test_loader = test_loader
         self.local_epochs = local_epochs
         self.device = device
+        self.client_id = client_id
+        self.is_malicious = int(client_id) % 5 == 0
 
     def fit(self, parameters, _):
         """
@@ -53,9 +55,9 @@ class FemnistClient(NumPyClient):
         """
         set_weights(self.model, parameters)
         val_loss, val_accuracy = train(self.model, self.train_loader,
-                                       self.test_loader, self.local_epochs, self.device)
+                                       self.test_loader, self.local_epochs, self.device, self.is_malicious)
         return get_weights(self.model), len(self.train_loader.dataset), {'val_loss': val_loss, 'val_accuracy': val_accuracy}
-
+    
     def evaluate(self, parameters, _):
         """
         Evaluate the model on the test dataset.
@@ -92,13 +94,15 @@ def train(model, train_loader, test_loader, epochs, device):
         for batch in train_loader:
             images = batch['img']
             labels = batch['label']
+            if is_malicious:
+                # Randomly flip some labels
+                mask = torch.rand(labels.shape) < 0.5
+                labels[mask] = torch.randint(0, 10, (mask.sum(),)) 
             optimizer.zero_grad()
-            # images and labels already on device
             criterion(model(images), labels).backward()
             optimizer.step()
 
     val_loss, val_accuracy = test(model, test_loader, device)
-
     return val_loss, val_accuracy
 
 
@@ -140,7 +144,7 @@ def client_fn(context: Context):
                        data loaders, local epochs, and device.
     """
     device = get_device()
-    # read node_config
+     # read node_config
     client_id = context.node_config['partition-id']
 
     # read run_config
@@ -159,8 +163,8 @@ def client_fn(context: Context):
         train_loader=train_loader,
         test_loader=test_loader,
         local_epochs=local_epochs,
-        device=device
+        device=device,
+        client_id=client_id
     ).to_client()
-
 
 app = ClientApp(client_fn)
