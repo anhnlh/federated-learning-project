@@ -30,7 +30,7 @@ fraction-evaluate = 0.8
 local-epochs = 10
 data-dir = "./femnist_subset/"
 batch-size = 64
-poison=False
+poison="false"
 
 [tool.flwr.federations]
 default = "local-simulation"
