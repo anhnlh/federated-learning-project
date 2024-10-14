@@ -3,24 +3,22 @@ Client implementation using the Flower Framework.
 
 Author: Anh Nguyen, aln4739@rit.edu
 """
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
-
+import csv
+import os
 
 from src.model import get_model
 from src.main import get_device, load_data, get_weights, set_weights
-
 
 class FemnistClient(NumPyClient):
     """
     Client implementation for the FEMNIST dataset.
     """
-
-    def __init__(self, model, train_loader, test_loader, local_epochs, device,client_id):
+    def __init__(self, model, train_loader, test_loader, local_epochs, device, client_id, is_poisoned):
         """
         Initializes the client with the given model, data loaders, number of local epochs, and device.
 
@@ -37,7 +35,7 @@ class FemnistClient(NumPyClient):
         self.local_epochs = local_epochs
         self.device = device
         self.client_id = client_id
-        self.is_malicious = int(client_id) % 5 == 0
+        self.is_poisoned = is_poisoned
 
     def fit(self, parameters, _):
         """
@@ -54,10 +52,9 @@ class FemnistClient(NumPyClient):
             - dict: The results of the training process.
         """
         set_weights(self.model, parameters)
-        val_loss, val_accuracy = train(self.model, self.train_loader,
-                                       self.test_loader, self.local_epochs, self.device, self.is_malicious)
-        return get_weights(self.model), len(self.train_loader.dataset), {'val_loss': val_loss, 'val_accuracy': val_accuracy}
-    
+        train_loss, train_accuracy = train(self.model, self.train_loader, self.local_epochs, self.device, self.is_poisoned)
+        return get_weights(self.model), len(self.train_loader.dataset), {"loss": train_loss, "accuracy": train_accuracy}
+
     def evaluate(self, parameters, _):
         """
         Evaluate the model on the test dataset.
@@ -73,10 +70,9 @@ class FemnistClient(NumPyClient):
         """
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.test_loader, self.device)
-        return loss, len(self.test_loader.dataset), {'accuracy': accuracy}
+        return loss, len(self.test_loader.dataset), {"accuracy": accuracy}
 
-
-def train(model, train_loader, test_loader, epochs, device):
+def train(model, train_loader, epochs, device, is_poisoned):
     """
     Trains the given model using the provided training data loader for a specified number of epochs.
     Args:
@@ -90,21 +86,31 @@ def train(model, train_loader, test_loader, epochs, device):
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters())
     model.train()
+    total_loss, total_correct = 0, 0
+    total_samples = 0
+
     for _ in range(epochs):
         for batch in train_loader:
             images = batch['img']
             labels = batch['label']
-            if is_malicious:
-                # Randomly flip some labels
-                mask = torch.rand(labels.shape) < 0.5
-                labels[mask] = torch.randint(0, 10, (mask.sum(),)) 
+            if is_poisoned:
+                # Implement your poisoning logic here
+                labels = torch.randint(0, 10, labels.shape).to(device)
+            
             optimizer.zero_grad()
-            criterion(model(images), labels).backward()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
             optimizer.step()
 
-    val_loss, val_accuracy = test(model, test_loader, device)
-    return val_loss, val_accuracy
+            total_loss += loss.item() * images.size(0)
+            _, predicted = torch.max(outputs.data, 1)
+            total_correct += (predicted == labels).sum().item()
+            total_samples += images.size(0)
 
+    avg_loss = total_loss / total_samples
+    accuracy = total_correct / total_samples
+    return avg_loss, accuracy
 
 def test(model, test_loader, device):
     """
@@ -119,20 +125,25 @@ def test(model, test_loader, device):
             - accuracy (float): The accuracy of the model on the test dataset.
     """
     criterion = nn.CrossEntropyLoss().to(device)
-    correct, loss = 0, 0.0
+    model.eval()
+    total_loss, total_correct = 0, 0
+    total_samples = 0
+
     with torch.no_grad():
         for batch in test_loader:
             images = batch['img']
             labels = batch['label']
             outputs = model(images)
-            loss += criterion(outputs, labels).item()
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == labels).sum().item()
+            loss = criterion(outputs, labels)
 
-    accuracy = 100. * correct / len(test_loader.dataset)
-    loss /= len(test_loader.dataset)
-    return loss, accuracy
+            total_loss += loss.item() * images.size(0)
+            _, predicted = torch.max(outputs.data, 1)
+            total_correct += (predicted == labels).sum().item()
+            total_samples += images.size(0)
 
+    avg_loss = total_loss / total_samples
+    accuracy = total_correct / total_samples
+    return avg_loss, accuracy
 
 def client_fn(context: Context):
     """
@@ -144,19 +155,15 @@ def client_fn(context: Context):
                        data loaders, local epochs, and device.
     """
     device = get_device()
-     # read node_config
+    # read node_config
     client_id = context.node_config['partition-id']
 
     # read run_config
     data_dir = context.run_config['data-dir']
     batch_size = context.run_config['batch-size']
-    train_loader, test_loader = load_data(
-        client_id,
-        data_dir,
-        batch_size,
-        device
-    )
+    train_loader, test_loader = load_data(client_id, data_dir, batch_size, device)
     local_epochs = context.run_config['local-epochs']
+    is_poisoned = context.run_config.get('poison', False) and int(client_id) % 5 == 0
 
     return FemnistClient(
         model=get_model(device),
@@ -164,7 +171,9 @@ def client_fn(context: Context):
         test_loader=test_loader,
         local_epochs=local_epochs,
         device=device,
-        client_id=client_id
+        client_id=client_id,
+        is_poisoned=is_poisoned
     ).to_client()
 
 app = ClientApp(client_fn)
+
