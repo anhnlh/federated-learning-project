@@ -7,9 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class FemnistModel(nn.Module):
-    def __init__(self, input_shape=(1, 28, 28), num_classes=10):
+    def __init__(self, input_shape=(1, 28, 28), num_classes=10):  # Keep original num_classes
         super(FemnistModel, self).__init__()
         self.conv1 = nn.Conv2d(
             in_channels=input_shape[0],
@@ -26,7 +25,6 @@ class FemnistModel(nn.Module):
             kernel_size=3,
         )
         self.dropout = nn.Dropout(0.5)
-        # 28x28 -> 26x26 -> 13x13 -> 11x11 -> 5x5
         self.fc = nn.Linear(
             64 * ((input_shape[1] // 4 - 2) * (input_shape[2] // 4 - 2)),
             num_classes
@@ -40,8 +38,7 @@ class FemnistModel(nn.Module):
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
         x = self.dropout(x)
         x = self.fc(x)
-        return F.softmax(x, dim=1)
-
+        return F.softmax(x, dim=1)  # Keep original softmax
 
 def get_model(device):
     model = FemnistModel()

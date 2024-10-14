@@ -3,7 +3,6 @@ Main script to run the Federated Learning simulation.
 
 Author: Anh Nguyen, aln4739@rit.edu
 """
-
 import os
 
 import matplotlib.pyplot as plt
