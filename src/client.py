@@ -52,9 +52,9 @@ class FemnistClient(NumPyClient):
             - dict: The results of the training process.
         """
         set_weights(self.model, parameters)
-        results = train(self.model, self.train_loader,
-                        self.test_loader, self.local_epochs, self.device)
-        return get_weights(self.model), len(self.train_loader.dataset), results
+        val_loss, val_accuracy = train(self.model, self.train_loader,
+                                       self.test_loader, self.local_epochs, self.device)
+        return get_weights(self.model), len(self.train_loader.dataset), {'val_loss': val_loss, 'val_accuracy': val_accuracy}
 
     def evaluate(self, parameters, _):
         """
@@ -86,7 +86,7 @@ def train(model, train_loader, test_loader, epochs, device):
         float: The average loss over the training data.
     """
     criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.Adam(model.parameters())
     model.train()
     for _ in range(epochs):
         for batch in train_loader:
@@ -99,10 +99,7 @@ def train(model, train_loader, test_loader, epochs, device):
 
     val_loss, val_accuracy = test(model, test_loader, device)
 
-    return {
-        "val_loss": val_loss,
-        "val_accuracy": val_accuracy
-    }
+    return val_loss, val_accuracy
 
 
 def test(model, test_loader, device):
@@ -128,8 +125,8 @@ def test(model, test_loader, device):
             _, predicted = torch.max(outputs, 1)
             correct += (predicted == labels).sum().item()
 
-    accuracy = correct / len(test_loader.dataset)
-    loss /= len(test_loader)
+    accuracy = 100. * correct / len(test_loader.dataset)
+    loss /= len(test_loader.dataset)
     return loss, accuracy
 
 

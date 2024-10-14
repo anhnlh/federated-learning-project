@@ -1,61 +1,46 @@
 """
 Defines the neural network model for the Federated Learning simulation.
 
-Author: Ananya Misra, am4063@g.rit.edu
+Author: Ananya Misra, am4063@g.rit.edu; Anh Nguyen, aln4739@rit.edu
 """
-# Imports functions of Pytorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Neural Network model for FEMNIST dataset classification
-
 
 class FemnistModel(nn.Module):
-    def __init__(self):
-        # Calls the parent constructor
+    def __init__(self, input_shape=(1, 28, 28), num_classes=10):
         super(FemnistModel, self).__init__()
-
-        # First convolutional layer: 1 input channel, 32 output channels, 3x3 kernel
         self.conv1 = nn.Conv2d(
-            in_channels=1, out_channels=32, kernel_size=3, padding=1)
-
-        # Second convolutional layer: 32 input channels, 64 output channels, 3x3 kernel
+            in_channels=input_shape[0],
+            out_channels=32,
+            kernel_size=3,
+        )
+        self.pool = nn.MaxPool2d(
+            kernel_size=2,
+            stride=2
+        )
         self.conv2 = nn.Conv2d(
-            in_channels=32, out_channels=64, kernel_size=3, padding=1)
-
-        # First fully connected layer: 64 * 7 * 7 input features, 128 output feature
-        self.fc1 = nn.Linear(in_features=64 * 7 * 7, out_features=128)
-
-        # Output layer: 128 input features, 62 output features
-        self.fc2 = nn.Linear(in_features=128, out_features=62)
+            in_channels=32,
+            out_channels=64,
+            kernel_size=3,
+        )
+        self.dropout = nn.Dropout(0.5)
+        # 28x28 -> 26x26 -> 13x13 -> 11x11 -> 5x5
+        self.fc = nn.Linear(
+            64 * ((input_shape[1] // 4 - 2) * (input_shape[2] // 4 - 2)),
+            num_classes
+        )
 
     def forward(self, x):
-
-        # Apply first convolutional layer, then ReLU activation, then max pooling
         x = F.relu(self.conv1(x))
-        x = F.max_pool2d(x, 2)
-
-        # Apply second convolutional layer, then ReLU activation, then max pooling
+        x = self.pool(x)
         x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2)
-
-        # Apply first fully connected layer, then ReLU activation
-        x = x.view(-1, 64 * 7 * 7)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-
-        return x
-
-    # Saves the model's state dictionary to a specfic path
-    def save(self, path):
-        torch.save(self.state_dict(), path)
-
-    # Loads the model's state dictionary to a specfic path
-    def load(self, path):
-        self.load_state_dict(torch.load(path))
-
-    # Moves and creates an instance of the model
+        x = self.pool(x)
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = self.dropout(x)
+        x = self.fc(x)
+        return F.softmax(x, dim=1)
 
 
 def get_model(device):
