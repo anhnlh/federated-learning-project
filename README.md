@@ -4,8 +4,9 @@ This project simulates training in a federated setting using the Flower framewor
 
 ## Instructions
 
-1. Create a new virtual environment and install the dependencies in `requirements.txt`
-2. Start the regular unpoisoned simulation by running this command
+1. Download the instructor-provided FEMNIST dataset and named it `femnist_subset`
+2. Create a new virtual environment and install the dependencies in `requirements.txt`
+3. Start the regular unpoisoned simulation by running this command
 
 ```
 flwr run
@@ -14,7 +15,7 @@ flwr run
 3. Then, try the poisoned simulation by overriding the `poison` option
 
 ```
-flwr run --run-config "poison=True"
+flwr run --run-config "poison='true'"
 ```
 
 ## Group 3 Members
