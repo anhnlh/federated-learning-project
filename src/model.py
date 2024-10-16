@@ -10,6 +10,17 @@ import torch.nn.functional as F
 
 
 class FemnistModel(nn.Module):
+    """
+    A Convolutional Neural Network (CNN) model for the Federated Learning simulation
+    on the FEMNIST dataset.
+
+    Attributes:
+        conv1 (nn.Conv2d): First convolutional layer.
+        pool (nn.MaxPool2d): Max pooling layer.
+        conv2 (nn.Conv2d): Second convolutional layer.
+        dropout (nn.Dropout): Dropout layer.
+        fc (nn.Linear): Fully connected layer.
+    """
     def __init__(self, input_shape=(1, 28, 28), num_classes=10):  # Keep original num_classes
         super(FemnistModel, self).__init__()
         self.conv1 = nn.Conv2d(
@@ -40,5 +51,14 @@ class FemnistModel(nn.Module):
 
 
 def get_model(device):
+    """
+    Initializes and returns the FemnistModel on the specified device.
+
+    Args:
+        device (torch.device): The device on which to run the model.
+
+    Returns:
+        FemnistModel: The initialized model on the specified device.
+    """
     model = FemnistModel()
     return model.to(device)

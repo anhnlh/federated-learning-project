@@ -17,6 +17,17 @@ from .model import get_model
 
 
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
+    """
+    Calculate the weighted average of accuracy and loss metrics. Function to be
+    used as the aggregation function in the FedAvg strategy.
+
+    Args:
+        metrics (List[Tuple[int, Metrics]]): A list of tuples where each tuple contains
+                                             the number of examples and a dictionary of metrics.
+
+    Returns:
+        Metrics: A dictionary containing the weighted average of accuracy and loss.
+    """
     accuracies = [num_examples * m["accuracy"] for num_examples, m in metrics]
     losses = [num_examples * m["loss"] for num_examples, m in metrics]
     examples = [num_examples for num_examples, _ in metrics]
@@ -28,6 +39,15 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
 
 
 class MetricLogger:
+    """
+    A class used to log and save metrics during federated learning rounds.
+
+    Attributes:
+        folder (str): The directory where metrics will be saved.
+        filename (str): The name of the file where metrics will be saved.
+        metrics (list): A list to store metrics for each round.
+        num_rounds (int): The total number of rounds to log metrics for.
+    """
     def __init__(self, is_poisoned, num_rounds, config_string):
         self.folder = "results/attack" if is_poisoned else "results/no_attack"
         self.filename = f"{self.folder}/global_metrics({config_string}).csv"
@@ -51,6 +71,15 @@ class MetricLogger:
 
 
 def server_fn(context: Context):
+    """
+    Initialize and configure the federated learning server.
+
+    Args:
+        context (Context): The context object containing the run configuration.
+
+    Returns:
+        ServerAppComponents: The components required to run the federated learning server.
+    """
     num_rounds = context.run_config['num-server-rounds']
     fraction_fit = context.run_config['fraction-fit']
     fraction_evaluate = context.run_config['fraction-evaluate']
