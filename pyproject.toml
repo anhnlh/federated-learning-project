@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "federated-learning-project"
+version = "1.0.0"
+description = ""
+license = "Apache-2.0"
+dependencies = [
+    "flwr==1.11.0",
+    "torch==2.4.1",
+    "torchvision==0.19.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "group3"
+
+[tool.flwr.app.components]
+serverapp = "src.server:app"
+clientapp = "src.client:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 15
+fraction-fit = 1.0
+fraction-evaluate = 1.0
+local-epochs = 5
+data-dir = "./femnist_subset/"
+batch-size = 32
+poison=false
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 10

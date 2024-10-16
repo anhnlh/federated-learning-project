@@ -3,15 +3,15 @@ Main script to run the Federated Learning simulation.
 
 Author: Anh Nguyen, aln4739@rit.edu
 """
-
 import os
+from typing import OrderedDict
 
 import matplotlib.pyplot as plt
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
-from model import get_model
+
 
 class ClientDataset(Dataset):
     """
@@ -21,6 +21,7 @@ class ClientDataset(Dataset):
         image_paths (list): List of image paths.
         labels (list): List of labels corresponding to the image paths.
     """
+
     def __init__(self, image_paths, labels, device):
         self.image_paths = image_paths
         self.labels = labels
@@ -67,6 +68,35 @@ def split_dataset(client_data_dir):
     return train_image_paths, train_labels, test_image_paths, test_labels
 
 
+def get_weights(model):
+    """
+    Extracts the weights from a given PyTorch model and converts them to NumPy arrays.
+
+    Args:
+        model (torch.nn.Module): The PyTorch model from which to extract weights.
+
+    Returns:
+        list: A list of NumPy arrays representing the weights of the model.
+    """
+    return [val.cpu().numpy() for _, val in model.state_dict().items()]
+
+
+def set_weights(model, parameters):
+    """
+    Set the weights of a given model using the provided parameters.
+
+    Args:
+        model (torch.nn.Module): The model whose weights are to be set.
+        parameters (list): A list of parameters to set in the model. Each parameter should correspond to a layer in the model.
+
+    Returns:
+        None
+    """
+    params_dict = zip(model.state_dict().keys(), parameters)
+    state_dict = OrderedDict({k: torch.Tensor(v) for k, v in params_dict})
+    model.load_state_dict(state_dict)
+
+
 def visualize_data(client_id, train_loader):
     """
     Visualize the data for each client.
@@ -86,7 +116,8 @@ def visualize_data(client_id, train_loader):
         break
     plt.show()
 
-def set_device():
+
+def get_device():
     """
     Set the device to the first available GPU, otherwise use CPU.
     :return: device.
@@ -99,11 +130,30 @@ def set_device():
     return torch.device("cpu")
 
 
-def main():
+def load_data(client_id, data_dir, batch_size, device):
     """
-    Main function to run the Federated Learning simulation.
+    Load the data from the data directory.
+    :param data_dir: path to the data directory.
+    :return: train and test data loaders.
     """
-    device = set_device()
+    train_image_paths, train_labels, test_image_paths, test_labels = split_dataset(
+        os.path.join(data_dir, f"client_{client_id}")
+    )
+    train_dataset = ClientDataset(train_image_paths, train_labels, device)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataset = ClientDataset(test_image_paths, test_labels, device)
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, test_loader
+
+
+def test_load_data():
+    """
+    Function to test the data loading process.
+    """
+    device = get_device()
     data_dir = './femnist_subset'
     num_clients = len(os.listdir(data_dir))
 
@@ -116,9 +166,8 @@ def main():
         test_dataset = ClientDataset(test_image_paths, test_labels, device)
         test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-        visualize_data(client_id, train_loader)  # comment out if no visualization
-        # TODO: initialize ClientApp
+        visualize_data(client_id, train_loader)
 
 
 if __name__ == '__main__':
-    main()
+    test_load_data()
