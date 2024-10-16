@@ -15,7 +15,7 @@ flwr run
 3. Then, try the poisoned simulation by overriding the `poison` option
 
 ```
-flwr run --run-config "poison='true'"
+flwr run --run-config "poison=true"
 ```
 
 ## Group 3 Members

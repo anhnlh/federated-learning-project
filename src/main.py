@@ -4,13 +4,13 @@ Main script to run the Federated Learning simulation.
 Author: Anh Nguyen, aln4739@rit.edu
 """
 import os
+from typing import OrderedDict
 
 import matplotlib.pyplot as plt
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import Compose, Normalize, ToTensor
-from typing import OrderedDict
 
 
 class ClientDataset(Dataset):

@@ -3,16 +3,15 @@ Client implementation using the Flower Framework.
 
 Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 """
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
-import csv
-import os
 
+from src.main import get_device, get_weights, load_data, set_weights
 from src.model import get_model
-from src.main import get_device, load_data, get_weights, set_weights
 
 
 class FemnistClient(NumPyClient):
@@ -20,7 +19,16 @@ class FemnistClient(NumPyClient):
     Client implementation for the FEMNIST dataset.
     """
 
-    def __init__(self, model, train_loader, test_loader, local_epochs, device, client_id, is_poisoned):
+    def __init__(
+            self,
+            model,
+            train_loader,
+            test_loader,
+            local_epochs,
+            device,
+            client_id,
+            is_poisoned,
+    ):
         """
         Initializes the client with the given model, data loaders, number of local epochs, and device.
 
@@ -55,8 +63,17 @@ class FemnistClient(NumPyClient):
         """
         set_weights(self.model, parameters)
         train_loss, train_accuracy = train(
-            self.model, self.train_loader, self.local_epochs, self.device, self.is_poisoned)
-        return get_weights(self.model), len(self.train_loader.dataset), {"loss": train_loss, "accuracy": train_accuracy}
+            self.model,
+            self.train_loader,
+            self.local_epochs,
+            self.device,
+            self.is_poisoned,
+        )
+        return (
+            get_weights(self.model),
+            len(self.train_loader) * self.train_loader.batch_size,
+            {"loss": train_loss, "accuracy": train_accuracy},
+        )
 
     def evaluate(self, parameters, _):
         """
@@ -73,7 +90,11 @@ class FemnistClient(NumPyClient):
         """
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.test_loader, self.device)
-        return loss, len(self.test_loader.dataset), {"accuracy": accuracy}
+        return (
+            loss,
+            len(self.test_loader) * self.test_loader.batch_size,
+            {"loss": loss, "accuracy": accuracy},
+        )
 
 
 def train(model, train_loader, epochs, device, is_poisoned):
@@ -95,12 +116,12 @@ def train(model, train_loader, epochs, device, is_poisoned):
 
     for _ in range(epochs):
         for batch in train_loader:
-            images = batch['img']
-            labels = batch['label']
+            images = batch["img"]
+            labels = batch["label"]
             if is_poisoned:
                 poisoned_labels = torch.randint(0, 10, labels.shape).to(device)
-                # if poisoned label is the same, add 1
-                labels = poisoned_labels + (poisoned_labels == labels).float()
+                # if poisoned label is the same, add 1 to ensure the label is different
+                labels = (poisoned_labels + (poisoned_labels == labels).int()) % 10
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -136,8 +157,8 @@ def test(model, test_loader, device):
 
     with torch.no_grad():
         for batch in test_loader:
-            images = batch['img']
-            labels = batch['label']
+            images = batch["img"]
+            labels = batch["label"]
             outputs = model(images)
             loss = criterion(outputs, labels)
 
@@ -162,16 +183,15 @@ def client_fn(context: Context):
     """
     device = get_device()
     # read node_config
-    client_id = context.node_config['partition-id']
+    client_id = context.node_config["partition-id"]
 
     # read run_config
-    data_dir = context.run_config['data-dir']
-    batch_size = context.run_config['batch-size']
-    train_loader, test_loader = load_data(
-        client_id, data_dir, batch_size, device)
-    local_epochs = context.run_config['local-epochs']
+    data_dir = context.run_config["data-dir"]
+    batch_size = context.run_config["batch-size"]
+    train_loader, test_loader = load_data(client_id, data_dir, batch_size, device)
+    local_epochs = context.run_config["local-epochs"]
     unlucky = [1, 2, 5]
-    is_poisoned = context.run_config['poison'] == 'true' and client_id in unlucky
+    is_poisoned = context.run_config["poison"] and client_id in unlucky
 
     return FemnistClient(
         model=get_model(device),
@@ -180,7 +200,7 @@ def client_fn(context: Context):
         local_epochs=local_epochs,
         device=device,
         client_id=client_id,
-        is_poisoned=is_poisoned
+        is_poisoned=is_poisoned,
     ).to_client()
 
 
