@@ -4,6 +4,9 @@ Client implementation using the Flower Framework.
 Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 """
 
+import csv
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -28,6 +31,8 @@ class FemnistClient(NumPyClient):
             device,
             client_id,
             is_poisoned,
+            config_string,
+            folder
     ):
         """
         Initializes the client with the given model, data loaders, number of local epochs, and device.
@@ -46,6 +51,11 @@ class FemnistClient(NumPyClient):
         self.device = device
         self.client_id = client_id
         self.is_poisoned = is_poisoned
+
+        # Stuff for writing metrics to file
+        self.folder = folder
+        self.filename = f"{self.folder}/client_{client_id}_metrics({config_string}).csv"
+        os.makedirs(self.folder, exist_ok=True)
 
     def fit(self, parameters, _):
         """
@@ -69,6 +79,20 @@ class FemnistClient(NumPyClient):
             self.device,
             self.is_poisoned,
         )
+        cur_round_num = 1
+        if os.path.exists(self.filename):
+            with open(self.filename, "r") as f:
+                reader = csv.DictReader(f)
+                for _ in reader:
+                    cur_round_num += 1
+
+        with open(self.filename, "a+", newline="") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=["round", "loss", "accuracy"]
+            )
+            if cur_round_num == 1:
+                writer.writeheader()
+            writer.writerow({"round": cur_round_num, "loss": train_loss, "accuracy": train_accuracy})
         return (
             get_weights(self.model),
             len(self.train_loader) * self.train_loader.batch_size,
@@ -192,6 +216,9 @@ def client_fn(context: Context):
     local_epochs = context.run_config["local-epochs"]
     unlucky = [1, 2, 5]
     is_poisoned = context.run_config["poison"] and client_id in unlucky
+    num_rounds = context.run_config["num-server-rounds"]
+
+    config_string = f"num_rounds={num_rounds}, local_epochs={local_epochs}, batch_size={batch_size}"
 
     return FemnistClient(
         model=get_model(device),
@@ -201,6 +228,8 @@ def client_fn(context: Context):
         device=device,
         client_id=client_id,
         is_poisoned=is_poisoned,
+        config_string=config_string,
+        folder="results/attack" if context.run_config["poison"] else "results/no_attack",
     ).to_client()
 
 
