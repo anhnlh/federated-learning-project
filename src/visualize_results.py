@@ -7,16 +7,11 @@ import os
 def plot_metric(metric, title, ylabel, folder):
     plt.figure(figsize=(10, 6))
     
-    client_dfs = []
     for file in os.listdir(folder):
         if file.startswith("client_") and file.endswith(".csv"):
+            client_num = file.split("_")[1]
             df = pd.read_csv(os.path.join(folder, file))
-            plt.plot(df["round"], df[metric], alpha=0.5, linestyle='--')
-            client_dfs.append(df)
-    
- 
-    avg_df = pd.concat(client_dfs).groupby("round").mean().reset_index()
-    plt.plot(avg_df["round"], avg_df[metric], label="Average", linewidth=2, color="red")
+            plt.plot(df["round"], df[metric], alpha=0.5, label=f"Client {client_num}", linestyle='--')
     
     global_file = glob.glob(os.path.join(folder, "global_metrics(*).csv"))[0]
     global_df = pd.read_csv(global_file)
