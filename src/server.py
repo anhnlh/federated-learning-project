@@ -12,8 +12,8 @@ from flwr.common import Context, Metrics, ndarrays_to_parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
 
-from src.main import get_device
-from src.model import get_model
+from .main import get_device
+from .model import get_model
 
 
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
