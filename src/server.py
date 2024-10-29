@@ -95,7 +95,7 @@ class FedAvgTrust(FedAvg):
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
 
-    def calc_reputation(self):
+    def calc_reputation(self, client_id: str, distance: float) -> float:
         """
         Calculate the reputation of each client based on the metrics received from the client.
         TODO: Vectorize this if possible.
