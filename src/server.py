@@ -101,7 +101,14 @@ class FedAvgTrust(FedAvg):
         TODO: Vectorize this if possible.
         :return:
         """
-        return 0
+        R_prev = self.client_reputations.get(client_id, 1.0)
+        d = distance    
+        if d < self.alpha:
+            R = (R_prev + d) - (R_prev / self.t)
+        else:
+            R = (R_prev + d) * np.exp(-(1 - d) * (R_prev / self.t)) 
+        R = max(0.0, min(1.0, R))
+        return R
 
     def calc_trust(self):
         """
