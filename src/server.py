@@ -110,13 +110,21 @@ class FedAvgTrust(FedAvg):
         R = max(0.0, min(1.0, R))
         return R
 
-    def calc_trust(self):
+    def calc_trust(self, R: float, d: float) -> float:
         """
-        Calculate the trust of each client based on the reputation of the client.
-        TODO: Vectorize this if possible.
-        :return:
+        Calculate trust score based on reputation and distance.
+        
+        Args:
+            R: Reputation score
+            d: L2 distance
+        Returns:
+            float: Trust score between 0 and 1
         """
-        return 0
+        trust = np.sqrt((R * R) + (d * d)) - np.sqrt((1 - R) * (1 - R) + (1 - d) * (1 - d))
+        
+        if trust >= self.trust_threshold:
+            return 1.0
+        return 0.0
 
 
 def server_fn(context: Context):
