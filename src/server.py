@@ -8,7 +8,7 @@ import csv
 import os
 from typing import List, Tuple
 
-from flwr.common import Context, Metrics, ndarrays_to_parameters
+from flwr.common import Context, Metrics, ndarrays_to_parameters, Parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
 
@@ -48,6 +48,7 @@ class MetricLogger:
         metrics (list): A list to store metrics for each round.
         num_rounds (int): The total number of rounds to log metrics for.
     """
+
     def __init__(self, is_poisoned, num_rounds, config_string):
         self.folder = "results/attack" if is_poisoned else "results/no_attack"
         self.filename = f"{self.folder}/global_metrics({config_string}).csv"
@@ -68,6 +69,47 @@ class MetricLogger:
                 f, fieldnames=["round", "loss", "accuracy"])
             writer.writeheader()
             writer.writerows(self.metrics)
+
+
+class FedAvgTrust(FedAvg):
+    """
+    Custom Federated Averaging strategy that employs Trust and Reputation calculations to
+    determine the trustworthiness of clients and remove malicious clients from the training.
+    """
+
+    def __init__(
+            self,
+            fraction_fit: float,
+            fraction_evaluate: float,
+            min_available_clients: int,
+            initial_parameters: Parameters,
+            fit_metrics_aggregation_fn,
+            evaluate_metrics_aggregation_fn,
+    ):
+        super().__init__(
+            fraction_fit=fraction_fit,
+            fraction_evaluate=fraction_evaluate,
+            min_available_clients=min_available_clients,
+            initial_parameters=initial_parameters,
+            fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
+            evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
+        )
+
+    def calc_reputation(self):
+        """
+        Calculate the reputation of each client based on the metrics received from the client.
+        TODO: Vectorize this if possible.
+        :return:
+        """
+        return 0
+
+    def calc_trust(self):
+        """
+        Calculate the trust of each client based on the reputation of the client.
+        TODO: Vectorize this if possible.
+        :return:
+        """
+        return 0
 
 
 def server_fn(context: Context):
@@ -101,7 +143,7 @@ def server_fn(context: Context):
             "val_accuracy": aggregated["accuracy"]
         }
 
-    strategy = FedAvg(
+    strategy = FedAvgTrust(
         fraction_fit=fraction_fit,
         fraction_evaluate=fraction_evaluate,
         min_available_clients=2,
