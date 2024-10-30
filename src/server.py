@@ -95,6 +95,14 @@ class FedAvgTrust(FedAvg):
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
 
+    def _calculate_l2_distance(self, client_params, mean_params) -> float:
+        
+        total_distance = 0
+        for client_layer, mean_layer in zip(client_params, mean_layer):
+            diff = client_layer - mean_layer
+            total_distance += float(np.sum(diff * diff))
+        return np.sqrt(total_distance)
+    
     def calc_reputation(self, client_id: str, distance: float) -> float:
         """
         Calculate the reputation of each client based on the metrics received from the client.
