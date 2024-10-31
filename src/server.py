@@ -94,6 +94,10 @@ class FedAvgTrust(FedAvg):
             fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
+        self.trust_threshold = trust_threshold
+        self.client_reputations = {} 
+        self.t = 10.0  
+        self.alpha = 0.5
 
     def _calculate_l2_distance(self, client_params, mean_params) -> float:
         
