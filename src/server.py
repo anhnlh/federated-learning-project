@@ -110,8 +110,6 @@ class FedAvgTrust(FedAvg):
     def calc_reputation(self, client_id: str, distance: float) -> float:
         """
         Calculate the reputation of each client based on the metrics received from the client.
-        TODO: Vectorize this if possible.
-        :return:
         """
         R_prev = self.client_reputations.get(client_id, 1.0)
         d = distance    
@@ -177,6 +175,7 @@ def server_fn(context: Context):
         initial_parameters=params,
         fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
         evaluate_metrics_aggregation_fn=weighted_average,
+        trust_threshold=0.5,
     )
 
     config = ServerConfig(num_rounds=num_rounds)
