@@ -6,11 +6,13 @@ Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 
 import csv
 import os
-from typing import List, Tuple
-
+from typing import List, Tuple, Optional, Dict, Scalar
+import numpy as np
 from flwr.common import Context, Metrics, ndarrays_to_parameters, Parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.strategy import FedAvg
+from flwr.server.client_proxy import ClientProxy
+from flwr.common.typing import FitRes
 
 from .main import get_device
 from .model import get_model
@@ -85,6 +87,7 @@ class FedAvgTrust(FedAvg):
             initial_parameters: Parameters,
             fit_metrics_aggregation_fn,
             evaluate_metrics_aggregation_fn,
+            trust_threshold: float = 0.5,
     ):
         super().__init__(
             fraction_fit=fraction_fit,
@@ -100,9 +103,8 @@ class FedAvgTrust(FedAvg):
         self.alpha = 0.5
 
     def _calculate_l2_distance(self, client_params, mean_params) -> float:
-        
         total_distance = 0
-        for client_layer, mean_layer in zip(client_params, mean_layer):
+        for client_layer, mean_layer in zip(client_params, mean_params):
             diff = client_layer - mean_layer
             total_distance += float(np.sum(diff * diff))
         return np.sqrt(total_distance)
@@ -123,18 +125,44 @@ class FedAvgTrust(FedAvg):
     def calc_trust(self, R: float, d: float) -> float:
         """
         Calculate trust score based on reputation and distance.
-        
-        Args:
-            R: Reputation score
-            d: L2 distance
-        Returns:
-            float: Trust score between 0 and 1
         """
         trust = np.sqrt((R * R) + (d * d)) - np.sqrt((1 - R) * (1 - R) + (1 - d) * (1 - d))
-        
         if trust >= self.trust_threshold:
             return 1.0
         return 0.0
+
+    def aggregate_fit(
+        self,
+        server_round: int,
+        results: List[Tuple[ClientProxy, FitRes]],
+        failures: List[BaseException],
+    ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
+        
+        if not results:
+            return None, {}
+        
+        # Takes in the mean model parameters
+        all_params = [list(fit_res.parameters.tensors) for _, fit_res in results]
+        mean_params = []
+        for i in range(len(all_params[0])):
+            layer_params = [p[i] for p in all_params]
+            mean_params.append(np.mean(layer_params, axis=0))
+        
+        # Filtering the clients based on trust
+        trusted_results = []
+        for client_proxy, fit_res in results:
+            client_params = list(fit_res.parameters.tensors)
+            distance = self._calculate_l2_distance(client_params, mean_params)
+            reputation = self.calc_reputation(client_proxy.cid, distance)
+            self.client_reputations[client_proxy.cid] = reputation
+            
+            if self.calc_trust(reputation, distance) > 0:
+                trusted_results.append((client_proxy, fit_res))
+        
+        if not trusted_results and results:
+            trusted_results = [max(results, key=lambda x: self.client_reputations[x[0].cid])]
+            
+        return super().aggregate_fit(server_round, trusted_results, failures)
 
 
 def server_fn(context: Context):
