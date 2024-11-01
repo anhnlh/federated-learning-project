@@ -9,9 +9,9 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from flwr.common import Context, Metrics, ndarrays_to_parameters, Parameters, parameters_to_ndarrays, Scalar
+from flwr.common import Context, FitIns, Metrics, ndarrays_to_parameters, Parameters, parameters_to_ndarrays, Scalar
 from flwr.common.typing import FitRes
-from flwr.server import ServerApp, ServerAppComponents, ServerConfig
+from flwr.server import ClientManager, ServerApp, ServerAppComponents, ServerConfig
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.strategy import FedAvg
 
@@ -100,6 +100,7 @@ class FedAvgTrust(FedAvg):
         )
         self.trust_threshold = trust_threshold
         self.client_reputations = {}
+        self.client_distances = {}
         self.alpha = 0.5
 
     @staticmethod
@@ -148,16 +149,32 @@ class FedAvgTrust(FedAvg):
             layer_params = [p[i] for p in all_params]
             mean_params.append(np.mean(layer_params, axis=0))
 
-        for client_proxy, fit_res in results:
+        for client, fit_res in results:
             client_params = parameters_to_ndarrays(fit_res.parameters)
             distance = self._calculate_l2_distance(client_params, mean_params)
+            self.client_distances[client] = distance
             if server_round == 1:
                 reputation = 1.0 - distance
             else:
-                reputation = self.calc_reputation(client_proxy, distance, server_round)
-            self.client_reputations[client_proxy] = reputation
+                reputation = self.calc_reputation(client, distance, server_round)
+            self.client_reputations[client] = reputation
 
         return super().aggregate_fit(server_round, results, failures)
+
+    def configure_fit(
+            self,
+            server_round: int,
+            parameters: Parameters,
+            client_manager: ClientManager
+    ) -> list[tuple[ClientProxy, FitIns]]:
+        """
+        Kick out clients with low trust scores.
+        """
+        for client, reputation in self.client_reputations.items():
+            # if trust score is below threshold, unregister client
+            if self.calc_trust(reputation, self.client_distances[client]) < self.trust_threshold:
+                client_manager.unregister(client)
+        return super().configure_fit(server_round, parameters, client_manager)
 
 
 def server_fn(context: Context):
