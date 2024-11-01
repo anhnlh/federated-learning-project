@@ -6,13 +6,14 @@ Author: Anh Nguyen, aln4739@rit.edu, Ananya Misra, am4063@g.rit.edu;
 
 import csv
 import os
-from typing import List, Tuple, Optional, Dict, Scalar
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from flwr.common import Context, Metrics, ndarrays_to_parameters, Parameters
-from flwr.server import ServerApp, ServerAppComponents, ServerConfig
-from flwr.server.strategy import FedAvg
-from flwr.server.client_proxy import ClientProxy
+from flwr.common import Context, Metrics, ndarrays_to_parameters, Parameters, parameters_to_ndarrays, Scalar
 from flwr.common.typing import FitRes
+from flwr.server import ServerApp, ServerAppComponents, ServerConfig
+from flwr.server.client_proxy import ClientProxy
+from flwr.server.strategy import FedAvg
 
 from .main import get_device
 from .model import get_model
@@ -98,27 +99,26 @@ class FedAvgTrust(FedAvg):
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
         self.trust_threshold = trust_threshold
-        self.client_reputations = {} 
-        self.t = 10.0  
+        self.client_reputations = {}
         self.alpha = 0.5
 
-    def _calculate_l2_distance(self, client_params, mean_params) -> float:
+    @staticmethod
+    def _calculate_l2_distance(client_params, mean_params) -> float:
         total_distance = 0
         for client_layer, mean_layer in zip(client_params, mean_params):
             diff = client_layer - mean_layer
             total_distance += float(np.sum(diff * diff))
         return np.sqrt(total_distance)
-    
-    def calc_reputation(self, client_id: str, distance: float) -> float:
+
+    def calc_reputation(self, client_id: ClientProxy, d: float, t: int) -> float:
         """
         Calculate the reputation of each client based on the metrics received from the client.
         """
         R_prev = self.client_reputations.get(client_id, 1.0)
-        d = distance    
         if d < self.alpha:
-            R = (R_prev + d) - (R_prev / self.t)
+            R = (R_prev + d) - (R_prev / t)
         else:
-            R = (R_prev + d) * np.exp(-(1 - d) * (R_prev / self.t)) 
+            R = (R_prev + d) - np.exp(-(1 - d) * (R_prev / t))
         R = max(0.0, min(1.0, R))
         return R
 
@@ -132,37 +132,32 @@ class FedAvgTrust(FedAvg):
         return 0.0
 
     def aggregate_fit(
-        self,
-        server_round: int,
-        results: List[Tuple[ClientProxy, FitRes]],
-        failures: List[BaseException],
+            self,
+            server_round: int,
+            results: List[Tuple[ClientProxy, FitRes]],
+            failures: List[BaseException],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
-        
+
         if not results:
             return None, {}
-        
+
         # Takes in the mean model parameters
-        all_params = [list(fit_res.parameters.tensors) for _, fit_res in results]
+        all_params = [parameters_to_ndarrays(fit_res.parameters) for _, fit_res in results]
         mean_params = []
         for i in range(len(all_params[0])):
             layer_params = [p[i] for p in all_params]
             mean_params.append(np.mean(layer_params, axis=0))
-        
-        # Filtering the clients based on trust
-        trusted_results = []
+
         for client_proxy, fit_res in results:
-            client_params = list(fit_res.parameters.tensors)
+            client_params = parameters_to_ndarrays(fit_res.parameters)
             distance = self._calculate_l2_distance(client_params, mean_params)
-            reputation = self.calc_reputation(client_proxy.cid, distance)
-            self.client_reputations[client_proxy.cid] = reputation
-            
-            if self.calc_trust(reputation, distance) > 0:
-                trusted_results.append((client_proxy, fit_res))
-        
-        if not trusted_results and results:
-            trusted_results = [max(results, key=lambda x: self.client_reputations[x[0].cid])]
-            
-        return super().aggregate_fit(server_round, trusted_results, failures)
+            if server_round == 1:
+                reputation = 1.0 - distance
+            else:
+                reputation = self.calc_reputation(client_proxy, distance, server_round)
+            self.client_reputations[client_proxy] = reputation
+
+        return super().aggregate_fit(server_round, results, failures)
 
 
 def server_fn(context: Context):
