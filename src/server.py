@@ -111,7 +111,6 @@ class FedAvgTrust(FedAvg):
             results: List[Tuple[ClientProxy, FitRes]],
             failures: List[BaseException],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
-        
         if not results:
             return None, {}
 
@@ -146,6 +145,11 @@ class FedAvgTrust(FedAvg):
         if not trusted_results and results:
             best_client = max(results, key=lambda x: self.client_reputations[x[0]])
             trusted_results = [best_client]
+
+        # Print reputations for each round
+        print(f"\nRound {server_round} Reputations:")
+        for client in self.client_reputations:
+            print(f"Client {client.cid}: {self.client_reputations[client]:.4f}")
 
         return super().aggregate_fit(server_round, trusted_results, failures)
 
