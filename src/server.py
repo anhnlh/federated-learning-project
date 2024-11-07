@@ -188,7 +188,9 @@ class FedAvgTrust(FedAvg):
         Unregisters clients with low trust scores after half the number of rounds have been completed.
         Then, calls the super class's configure_fit function as usual.
         """
-        if server_round > self.num_rounds // 2:
+        # only calculate trust when the variance of distances is high
+        if np.var(list(self.normalized_client_distances.values())) > 1e-2 and server_round > self.num_rounds // 2:
+            print("Variance: ", np.var(list(self.normalized_client_distances.values())))
             low_trust_clients = [
                 client for client, reputation in self.client_reputations.items()
                 if (
