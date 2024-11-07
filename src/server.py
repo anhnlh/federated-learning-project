@@ -108,6 +108,12 @@ class FedAvgTrust(FedAvg):
 
     @staticmethod
     def _calculate_l2_distance(client_params, mean_params) -> float:
+        """
+        Calculate the L2 distance between the client's parameters and the mean parameters.
+        :param client_params: list of client parameters
+        :param mean_params: list of mean parameters
+        :return: L2 distance
+        """
         total_distance = 0
         for client_param, mean_param in zip(client_params, mean_params):
             diff = client_param - mean_param
