@@ -238,7 +238,7 @@ def server_fn(context: Context):
         fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
         evaluate_metrics_aggregation_fn=weighted_average,
         num_rounds=num_rounds,
-        trust_threshold=0.1,
+        trust_threshold=0.07,
     )
 
     config = ServerConfig(num_rounds=num_rounds)
