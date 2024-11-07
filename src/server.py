@@ -88,6 +88,7 @@ class FedAvgTrust(FedAvg):
             initial_parameters: Parameters,
             fit_metrics_aggregation_fn,
             evaluate_metrics_aggregation_fn,
+            num_rounds: int,
             trust_threshold: float = 0.5,
     ):
         super().__init__(
@@ -98,39 +99,41 @@ class FedAvgTrust(FedAvg):
             fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
             evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
         )
+        self.num_rounds = num_rounds
         self.trust_threshold = trust_threshold
         self.client_reputations = {}
         self.client_distances = {}
+        self.normalized_client_distances = {}
         self.alpha = 0.5
 
     @staticmethod
     def _calculate_l2_distance(client_params, mean_params) -> float:
         total_distance = 0
-        for client_layer, mean_layer in zip(client_params, mean_params):
-            diff = client_layer - mean_layer
-            total_distance += float(np.sum(diff * diff))
+        for client_param, mean_param in zip(client_params, mean_params):
+            diff = client_param - mean_param
+            total_distance += np.sum(diff * diff)
         return np.sqrt(total_distance)
 
-    def calc_reputation(self, client_id: ClientProxy, d: float, t: int) -> float:
-        """
-        Calculate the reputation of each client based on the metrics received from the client.
-        """
-        R_prev = self.client_reputations.get(client_id, 1.0)
-        if d < self.alpha:
-            R = (R_prev + d) - (R_prev / t)
-        else:
-            R = (R_prev + d) - np.exp(-(1 - d) * (R_prev / t))
-        R = max(0.0, min(1.0, R))
-        return R
-
-    def calc_trust(self, R: float, d: float) -> float:
+    @staticmethod
+    def calc_trust(R: float, d: float) -> float:
         """
         Calculate trust score based on reputation and distance.
         """
         trust = np.sqrt((R * R) + (d * d)) - np.sqrt((1 - R) * (1 - R) + (1 - d) * (1 - d))
-        if trust >= self.trust_threshold:
-            return 1.0
-        return 0.0
+        return max(0.0, min(1.0, trust))
+
+    def calc_reputation(self, client: ClientProxy, d: float, t: int) -> float:
+        """
+        Calculate the reputation of each client based on the metrics received from the client.
+        Given, alpha = 1 - d. For the inequality d < alpha <=> d < 1 - d <=> 2d < 1 <=> d < 0.5
+        So, alpha = 0.5.
+        """
+        R_prev = self.client_reputations.get(client, 1.0 - d)
+        if d < self.alpha:
+            R = (R_prev + d) - (R_prev / t)
+        else:
+            R = (R_prev + d) - np.exp(-(1 - d * (R_prev / t)))
+        return max(0.0, min(1.0, R))
 
     def aggregate_fit(
             self,
@@ -138,25 +141,33 @@ class FedAvgTrust(FedAvg):
             results: List[Tuple[ClientProxy, FitRes]],
             failures: List[BaseException],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
+        """
+        Calculates and stores the reputation of each client based on the distance between the client's parameters
+        and the mean parameters of all clients.
+        After which, the function calls the super class's aggregate_fit function.
+        """
 
         if not results:
             return None, {}
 
-        # Takes in the mean model parameters
+        # calculate mean parameters
         all_params = [parameters_to_ndarrays(fit_res.parameters) for _, fit_res in results]
         mean_params = []
         for i in range(len(all_params[0])):
             layer_params = [p[i] for p in all_params]
             mean_params.append(np.mean(layer_params, axis=0))
 
+        # calculate all l2 distances
         for client, fit_res in results:
             client_params = parameters_to_ndarrays(fit_res.parameters)
-            distance = self._calculate_l2_distance(client_params, mean_params)
-            self.client_distances[client] = distance
-            if server_round == 1:
-                reputation = 1.0 - distance
-            else:
-                reputation = self.calc_reputation(client, distance, server_round)
+            self.client_distances[client] = self._calculate_l2_distance(client_params, mean_params)
+
+        # normalize distances and calculate reputation
+        maxdist = max(self.client_distances.values())
+        for client, fit_res in results:
+            distance = self.normalized_client_distances[client] = self.client_distances[client] / maxdist
+            # pass in as 1 - distance for better performance
+            reputation = self.calc_reputation(client, 1 - distance, server_round)
             self.client_reputations[client] = reputation
 
         return super().aggregate_fit(server_round, results, failures)
@@ -168,12 +179,23 @@ class FedAvgTrust(FedAvg):
             client_manager: ClientManager
     ) -> list[tuple[ClientProxy, FitIns]]:
         """
-        Kick out clients with low trust scores.
+        Unregisters clients with low trust scores after half the number of rounds have been completed.
+        Then, calls the super class's configure_fit function as usual.
         """
-        for client, reputation in self.client_reputations.items():
-            # if trust score is below threshold, unregister client
-            if self.calc_trust(reputation, self.client_distances[client]) < self.trust_threshold:
+        if server_round > self.num_rounds // 2:
+            low_trust_clients = [
+                client for client, reputation in self.client_reputations.items()
+                if (
+                        client.cid in client_manager.clients and
+                        self.calc_trust(
+                            reputation,
+                            1 - self.normalized_client_distances[client]
+                        ) < self.trust_threshold
+                )
+            ]
+            for client in low_trust_clients:
                 client_manager.unregister(client)
+                print(f"Client {client.node_id} has been unregistered due to low trust score.")
         return super().configure_fit(server_round, parameters, client_manager)
 
 
@@ -215,7 +237,8 @@ def server_fn(context: Context):
         initial_parameters=params,
         fit_metrics_aggregation_fn=fit_metrics_aggregation_fn,
         evaluate_metrics_aggregation_fn=weighted_average,
-        trust_threshold=0.5,
+        num_rounds=num_rounds,
+        trust_threshold=0.1,
     )
 
     config = ServerConfig(num_rounds=num_rounds)
